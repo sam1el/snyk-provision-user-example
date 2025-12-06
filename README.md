@@ -2,15 +2,6 @@
 
 This is a example Python script to provision users to Snyk organizations using the Snyk API. This script supports provisioning individual users or bulk provisioning from CSV/JSON files.
 
-## Features
-
-* 🔐 **Single User Provisioning**: Provision individual users to organizations
-* 📋 **Bulk Provisioning**: Provision multiple users from CSV or JSON files
-* 🎭 **Role Management**: Assign roles using role public IDs
-* 🌍 **Multi-Region Support**: Works with all Snyk regions
-* 📊 **Detailed Reporting**: Clear console output and optional JSON export
-* 🔄 **Error Handling**: Robust error handling with retry logic and rate limiting
-
 ## Prerequisites
 
 * Python 3.6 or higher
@@ -35,6 +26,7 @@ This is a example Python script to provision users to Snyk organizations using t
 python provision_user_to_snyk.py \
   --token YOUR_TOKEN \
   --org-id ORG_ID \
+  --group-id GROUP_ID \
   --email [email protected] \
   --role-public-id role-abc-123
 ```
@@ -44,6 +36,7 @@ python provision_user_to_snyk.py \
 ```bash
 python provision_user_to_snyk.py \
   --token YOUR_TOKEN \
+  --group-id GROUP_ID \
   --org-id ORG_ID \
   --file users.csv
 ```
@@ -54,6 +47,7 @@ python provision_user_to_snyk.py \
 python provision_user_to_snyk.py \
   --token YOUR_TOKEN \
   --org-id ORG_ID \
+  --group-id GROUP_ID \
   --file users.json
 ```
 
@@ -75,6 +69,7 @@ python provision_user_to_snyk.py \
 | ------------------ | -------- | ---------------------------------------------- | ----------------- |
 | `--token`          | Yes*     | Snyk API token                                 | SNYK_TOKEN env var |
 | `--org-id`         | Yes      | Snyk organization ID                           | -                 |
+| `--group-id`       | Yes****  | Snyk group ID (required for fallback workflow) | -                 |
 | `--email`          | Yes**    | User email address (for single user)           | -                 |
 | `--file`           | Yes**    | Path to CSV or JSON file (for bulk)           | -                 |
 | `--role-public-id` | Yes***   | ID of the role to grant this user             | None              |
@@ -88,6 +83,8 @@ python provision_user_to_snyk.py \
 \** Either `--email` or `--file` must be provided, but not both.
 
 \*** `--role-public-id` is required when using `--email` for single user provisioning. Optional when using `--file` if all users in the file have `role_public_id` specified.
+
+\**** `--group-id` is required when users already exist in the platform (for the fallback workflow). It's recommended to always provide this parameter to handle both new and existing users.
 
 ### Supported Regions
 
@@ -122,16 +119,16 @@ Create a JSON file with an array of user objects:
 ```json
 [
   {
-    "email": "[email protected]",
-    "role_public_id": "role-abc-123"
+    "email": "john.doe@example.com",
+    "role_public_id": "12345678-1234-1234-1234-123456789012"
   },
   {
-    "email": "[email protected]",
-    "role_public_id": "role-def-456"
+    "email": "jane.smith@example.com",
+    "role_public_id": "12345678-1234-1234-1234-123456789012"
   },
   {
-    "email": "[email protected]",
-    "role_public_id": "role-abc-123"
+    "email": "michael.johnson@example.com",
+    "role_public_id": "12345678-1234-1234-1234-123456789012"
   }
 ]
 ```
@@ -164,10 +161,10 @@ If `--output` is specified, results are saved as JSON with the following structu
   "provisioned": [
     {
       "success": true,
-      "email": "[email protected]",
+      "email": "john.doe@example.com",
       "org_id": "org-123",
       "result": {
-        "email": "[email protected]",
+        "email": "john.doe@example.com",
         "rolePublicId": "role-abc-123",
         "created": "2025-12-04T00:00:24Z"
       }
@@ -176,7 +173,7 @@ If `--output` is specified, results are saved as JSON with the following structu
   "failed": [
     {
       "success": false,
-      "email": "[email protected]",
+      "email": "john.doe@example.com",
       "org_id": "org-123",
       "error": "User already exists",
       "status_code": 409
@@ -201,6 +198,7 @@ If `--output` is specified, results are saved as JSON with the following structu
 python provision_user_to_snyk.py \
   --token "abc123-def456-ghi789" \
   --org-id "org-12345" \
+  --group-id "group-12345" \
   --email "[email protected]" \
   --role-public-id "role-abc-123"
 ```
@@ -211,6 +209,7 @@ python provision_user_to_snyk.py \
 python provision_user_to_snyk.py \
   --token "abc123-def456-ghi789" \
   --org-id "org-12345" \
+  --group-id "group-12345" \
   --file "users.csv"
 ```
 
@@ -220,6 +219,7 @@ python provision_user_to_snyk.py \
 python provision_user_to_snyk.py \
   --token "abc123-def456-ghi789" \
   --org-id "org-67890" \
+  --group-id "group-67890" \
   --file "users.json" \
   --region "SNYK-EU-01" \
   --output "provisioning_results.json"
@@ -231,7 +231,8 @@ python provision_user_to_snyk.py \
 export SNYK_TOKEN="your-token-here"
 python provision_user_to_snyk.py \
   --org-id "org-12345" \
-  --email "[email protected]" \
+  --group-id "group-12345" \
+  --email "john.doe@example.com" \
   --role-public-id "role-abc-123"
 ```
 
@@ -241,6 +242,7 @@ python provision_user_to_snyk.py \
 python provision_user_to_snyk.py \
   --token "abc123-def456-ghi789" \
   --org-id "org-12345" \
+  --group-id "group-12345" \
   --file "users.csv" \
   --role-public-id "role-abc-123"
 ```
