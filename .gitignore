@@ -1,0 +1,5 @@
+#logs folder
+logs/
+
+#cursor files
+.cursor/
