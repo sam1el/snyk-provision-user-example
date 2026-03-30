@@ -69,7 +69,7 @@ python provision_user_to_snyk.py \
 | ------------------ | -------- | ---------------------------------------------- | ----------------- |
 | `--token`          | Yes*     | Snyk API token                                 | SNYK_TOKEN env var |
 | `--org-id`         | Yes      | Snyk organization ID                           | -                 |
-| `--group-id`       | Yes****  | Snyk group ID (required for fallback workflow) | -                 |
+| `--group-id`       | Yes****  | Snyk group ID (required for fallback workflow when user already exists) | -                 |
 | `--email`          | Yes**    | User email address (for single user)           | -                 |
 | `--file`           | Yes**    | Path to CSV or JSON file (for bulk)           | -                 |
 | `--role-public-id` | Yes***   | ID of the role to grant this user             | None              |
@@ -141,9 +141,14 @@ Create a JSON file with an array of user objects:
 
 The script provides a formatted summary showing:
 * Total users processed
-* Successfully provisioned users
+* Provisioned users (pending first login)
+* Already provisioned users (pending first login)
+* Org membership assignments (for users that already exist in Snyk)
+* Already added (membership already exists)
 * Failed provisions with error details
 * Any errors encountered
+
+**Note**: Provisioning (`/v1/org/{orgId}/provision`) creates a pending provision record. Users typically won't appear as active org members until they complete their first SSO login.
 
 ### Log Files
 
@@ -170,13 +175,48 @@ If `--output` is specified, results are saved as JSON with the following structu
       }
     }
   ],
+  "already_provisioned": [
+    {
+      "success": true,
+      "email": "jane.smith@example.com",
+      "org_id": "org-123",
+      "method": "already_provisioned",
+      "result": {
+        "email": "jane.smith@example.com",
+        "rolePublicId": "role-abc-123",
+        "created": "2025-12-04T00:00:24Z"
+      }
+    }
+  ],
+  "org_memberships": [
+    {
+      "success": true,
+      "email": "michael.johnson@example.com",
+      "org_id": "org-123",
+      "user_id": "677d5f47-a8bf-4090-ba52-680903e7c8b5",
+      "role_id": "331ede0a-de94-456f-b788-166caeca58bf",
+      "method": "org_membership",
+      "already_exists": false
+    }
+  ],
+  "already_added": [
+    {
+      "success": true,
+      "email": "alex.lee@example.com",
+      "org_id": "org-123",
+      "user_id": "677d5f47-a8bf-4090-ba52-680903e7c8b5",
+      "role_id": "331ede0a-de94-456f-b788-166caeca58bf",
+      "method": "org_membership",
+      "already_exists": true
+    }
+  ],
   "failed": [
     {
       "success": false,
       "email": "john.doe@example.com",
       "org_id": "org-123",
-      "error": "User already exists",
-      "status_code": 409
+      "error": "Permission denied",
+      "status_code": 403
     }
   ],
   "skipped": [],
@@ -186,7 +226,7 @@ If `--output` is specified, results are saved as JSON with the following structu
 
 ## Exit Codes
 
-* `0` - Success (all users provisioned successfully)
+* `0` - Success (all users processed successfully)
 * `1` - Error (one or more users failed to provision or error occurred)
 * `130` - Interrupted by user (Ctrl+C)
 
@@ -251,16 +291,17 @@ python provision_user_to_snyk.py \
 
 ### Prerequisites for Provisioning
 
-1. **User Must Not Exist**: The user being provisioned must not already exist in the Snyk system
+1. **Provisioning Requires New Users**: The `/v1/org/{orgId}/provision` endpoint only works for users that have not yet logged into Snyk
 2. **Personal Token Required**: The API must be called using a personal token (not a service account token)
 3. **SSO Configuration**: The Snyk Group must have Single Sign-On (SSO) configured
 4. **SSO Login**: Both the inviting user and the provisioned user must log in using SSO
 5. **Permissions**: The inviting user must have the "Provision Users" permission
+6. **Existing Users**: If a user already exists in Snyk, the script falls back to creating an org membership via the REST API (requires `--group-id` and appropriate REST permissions)
 
 ### Error Handling
 
 The script handles common errors:
-* **409 Conflict**: User already exists
+* **409 Conflict**: Often indicates the user already exists (the script will attempt REST fallback if `--group-id` is provided)
 * **401 Unauthorized**: Invalid token or insufficient permissions
 * **404 Not Found**: Organization not found
 * **429 Rate Limited**: Automatically retries after waiting
@@ -288,17 +329,22 @@ logs/                       # Log files directory (created automatically)
 
 1. **"User already exists" error**
    - The user is already in the Snyk system
-   - Check if the user needs to be invited instead of provisioned
+   - Provide `--group-id` so the script can fall back to adding an org membership via REST
+   - If the user is not a member of the target group (or your token cannot read group memberships), use the standard invite flow instead
 
-2. **"Insufficient permissions" error**
+2. **User provisioned but not showing in org members**
+   - Provisioning creates a pending provision record
+   - The user typically won’t appear as an active org member until they complete their first SSO login
+
+3. **"Insufficient permissions" error**
    - Verify your token has "Provision Users" permission
    - Ensure you're using a personal token, not a service account token
 
-3. **"Organization not found" error**
+4. **"Organization not found" error**
    - Verify the organization ID is correct
    - Ensure your token has access to the organization
 
-4. **Rate limiting**
+5. **Rate limiting**
    - The script automatically handles rate limiting
    - If issues persist, add delays between requests
 
