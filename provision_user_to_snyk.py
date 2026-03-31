@@ -142,6 +142,7 @@ class SnykAPIClient:
                     params=params,
                     data=data,
                     json=json_data,
+                    headers=headers_override,
                     timeout=30
                 )
 
@@ -172,7 +173,13 @@ class SnykAPIClient:
                 except:
                     error_msg = response.text
                     error_code = None
-                logging.error(f"Forbidden (403): {error_msg}")
+                msg_lower = str(error_msg).lower()
+                # In provisioning flows, a "user already exists" 403 is an expected signal to use a different API
+                # (e.g. org membership) rather than a real permissions failure.
+                if "already exists" in msg_lower or "already provisioned" in msg_lower:
+                    logging.warning(f"Forbidden (403): {error_msg}")
+                else:
+                    logging.error(f"Forbidden (403): {error_msg}")
                 return {"error": error_msg, "status_code": 403, "error_type": "forbidden", "code": error_code}
             elif response.status_code == 404:
                 # Log full response for debugging
@@ -273,9 +280,16 @@ class SnykAPIClient:
 
             # Provide helpful error messages based on error type
             if error_type == "forbidden":
-                if "no user provision permission" in error_msg.lower() or "does not have permissions" in error_msg.lower():
+                error_msg_lower = error_msg.lower()
+                if "already exists" in error_msg_lower or "already provisioned" in error_msg_lower:
+                    # Expected when the user has already logged into Snyk at least once.
+                    logging.warning(f"User cannot be provisioned because they already exist in Snyk: {email}")
+                    error_type = "already_exists"
+                elif "no user provision permission" in error_msg_lower or "does not have permissions" in error_msg_lower:
                     error_msg = "API_KEY has no user provision permission or does not have permissions in role being provisioned"
-                logging.error(f"Permission denied (403): {error_msg}")
+                    logging.error(f"Permission denied (403): {error_msg}")
+                else:
+                    logging.error(f"Permission denied (403): {error_msg}")
             elif error_type == "conflict":
                 logging.warning(f"Conflict (409): User may already exist - {error_msg}")
             else:
@@ -731,6 +745,7 @@ class UserProvisioner:
         is_already_exists = (
             # Many tenants return 409 Conflict when the user already exists.
             status_code == 409
+            or result.get("error_type") == "already_exists"
             or (
                 status_code == 403
                 and (
